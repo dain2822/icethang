@@ -20,6 +20,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -42,30 +47,41 @@ public class SecurityConfig {
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(customUserDetailsService); // 넌 이 서비스 써!
-        authProvider.setPasswordEncoder(passwordEncoderr()); // 넌 이 암호화 방식 써!
+        authProvider.setUserDetailsService(customUserDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
         return authProvider;
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, CorsConfigurationSource corsConfigurationSource) throws Exception {
         http
-                // 1. CSRF 보안 끄기
+                // cors 설정
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // csrf 보안 끄기
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // 2. Form 로그인 & Basic 인증 끄기 (우리는 소셜 로그인만 할때)
-                // 나중에 통합 로그인시 다시 찾아보기
+                // Form 로그인 & Basic 인증 끄기 (소셜 로그인만 할때)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
 
-                // 3. 세션 설정 (나중에 JWT 쓸거면 STATELESS로 바꾸지만, 일단은 기본값 사용)
+                // 세션 설정 (STATELESS)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // 4. 권한 설정 (누가 어디를 갈 수 있는지)
+                // 권한 설정 (누가 어디를 갈 수 있는지)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/css/**", "/images/**", "/js/**", "/favicon.ico", "/h2-console/**").permitAll() // 정적 리소스 허용
-                        .requestMatchers("/auth/**", "/auth/refresh","/login/**", "/oauth2/**", "/api/students/join").permitAll() // 로그인 관련 URL 허용
-                        .requestMatchers("/auth/**").authenticated() // 로그인 로직 허용
+                        .requestMatchers("/error").permitAll()
+                        // 로그인 관련
+                        .requestMatchers("/auth/**", "/oauth2/**").permitAll()
+                        // [경험치 조회 API] 학생과 선생님 모두 접근 가능하도록 설정
+                        .requestMatchers("/classes/*/students/*/xp", "/themes/**").hasAnyRole("STUDENT", "TEACHER")
+                        // [수정 API] 오직 선생님만 접근 가능하도록 설정
+                        .requestMatchers("/classes/*/students/*/xp/give").hasRole("TEACHER")
+                        .requestMatchers("/classes/*/session/**").hasRole("TEACHER")
+                        // 소켓 연결
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/students/**", "/classes/**").authenticated()
                         .anyRequest().authenticated() // 나머지는 다 로그인 해야 함
                 )
 
@@ -82,6 +98,7 @@ public class SecurityConfig {
                         // 세션 대신 쿠키 쓰기
                         .authorizationEndpoint(authorization -> authorization
                                 .baseUri("/oauth2/authorization")
+                                // redirect_uri 쿠키에 저장
                                 .authorizationRequestRepository(httpCookieOAuth2AuthorizationRequestRepository)
                         )
                 );
@@ -90,8 +107,33 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // cors 세부 설정 빈 추가
     @Bean
-    public PasswordEncoder passwordEncoderr() {
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // 프론트엔드 주소 허용 (지금은 테스트용)
+        configuration.setAllowedOriginPatterns(List.of("*"));
+
+        // 허용 메서드
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+
+        // 허용 헤더
+        configuration.setAllowedHeaders(List.of("*"));
+
+        // 쿠키, 인증 정보 허용
+        configuration.setAllowCredentials(true);
+
+        // 프론트에서 토큰 헤더를 읽을 수 있게 허용
+        configuration.setExposedHeaders(List.of("Authorization", "Set-Cookie"));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 }

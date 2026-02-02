@@ -4,13 +4,18 @@ import com.ssafy.icethang.global.common.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.Where;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "teachers")
 @Getter
 @Setter // 로그인 세터는 그냥 두기
+@SQLDelete(sql = "UPDATE teachers SET deleted_at = CURRENT_TIMESTAMP WHERE teacher_id = ?")
+@Table(name = "teachers")
+@Where(clause = "deleted_at IS NULL")
 public class Auth extends BaseEntity {
 
     @Id
@@ -21,7 +26,9 @@ public class Auth extends BaseEntity {
     @Column(length = 100, unique = true, nullable = false)
     private String email;
 
-    private Integer schoolId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "school_id")
+    private Schools school;
 
     @Column(nullable = false)
     private String teacherName;

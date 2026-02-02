@@ -6,18 +6,32 @@ import com.ssafy.icethang.domain.auth.dto.request.UpdateUserRequest;
 import com.ssafy.icethang.domain.auth.dto.response.TokenResponseDto;
 import com.ssafy.icethang.domain.auth.entity.Auth;
 import com.ssafy.icethang.domain.auth.entity.AuthProvider;
+import com.ssafy.icethang.domain.auth.entity.Schools;
 import com.ssafy.icethang.domain.auth.repository.AuthRepository;
+import com.ssafy.icethang.domain.auth.repository.SchoolsRepository;
 import com.ssafy.icethang.global.redis.RedisService;
+import com.ssafy.icethang.global.security.CustomUserDetailsService;
 import com.ssafy.icethang.global.security.TokenProvider;
+import com.ssafy.icethang.global.security.oauth2.auth.KakaoOAuth2UserInfo;
+import com.ssafy.icethang.global.security.oauth2.auth.NaverOAuth2UserInfo;
+import com.ssafy.icethang.global.security.oauth2.auth.OAuth2UserInfo;
+import com.ssafy.icethang.global.utill.NeisApiService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -27,13 +41,22 @@ public class AuthService {
     private final TokenProvider tokenProvider;
     private final AuthenticationManager authenticationManager;
     private final RedisService redisService;
+    private final NeisApiService niceApiService;
+    private final SchoolsRepository schoolsRepository;
+    private final CustomUserDetailsService customUserDetailsService;
 
     @Transactional
     public String signup(SignupRequest request){
-        // 이메일 중복 검사
+        // 1. 이메일 중복 검사
         if(authRepository.findByEmail(request.getEmail()).isPresent()){
             throw new RuntimeException("이미 가입된 이메일입니다.");
         }
+
+        // 2. 학교 정보 처리 (DB -> 없으면 nice API 호출)
+        Schools school = schoolsRepository.findBySchoolName(request.getSchoolName())
+                .orElseGet(() -> {
+                    return niceApiService.searchAndSaveSchool(request.getSchoolName());
+                });
 
         // 비밀번호 암호화
         String encodedPassword = passwordEncoder.encode(request.getPassword());
@@ -43,8 +66,8 @@ public class AuthService {
         auth.setEmail(request.getEmail());
         auth.setPassword(encodedPassword);
         auth.setTeacherName(request.getTeacherName());
+        auth.setSchool(school);
         auth.setProvider(AuthProvider.LOCAL);
-        auth.setSchoolId(0);
 
         authRepository.save(auth);
         return auth.getEmail();
@@ -54,11 +77,13 @@ public class AuthService {
         UsernamePasswordAuthenticationToken authenticationToken =
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword());
 
+        // DB에 있는 비밀번호랑 비교
         Authentication authentication = authenticationManager.authenticate(authenticationToken);
 
         String accessToken = tokenProvider.createToken(authentication);
         String refreshToken = tokenProvider.createRefreshToken(authentication);
 
+        // 리프레시 토큰 redis에 저장
         redisService.setValues(
                 request.getEmail(),
                 refreshToken,
@@ -74,28 +99,32 @@ public class AuthService {
 
     // 토큰 재발급
     public TokenResponseDto reissue(String refreshToken) {
-        // 1. Refresh Token 검증
+        // Refresh Token 검증
         if (!tokenProvider.validateToken(refreshToken)) {
             throw new RuntimeException("Refresh Token이 유효하지 않습니다.");
         }
 
-        // 2. Refresh Token에서 User ID(이메일) 가져오기
-        Authentication authentication = tokenProvider.getAuthentication(refreshToken);
-        String email = authentication.getName();
+        // Refresh Token에서 이메일 가져오기
+        String email = tokenProvider.getEmailFromToken(refreshToken);
 
-        // 3. Redis에서 저장된 Refresh Token 가져오기
+        // Redis에서 저장된 Refresh Token 가져오기
         String redisRefreshToken = redisService.getValues(email);
-
-        // 4. 검사: Redis에 없거나, 요청온 토큰과 다르면 에러
         if (redisRefreshToken == null || !redisRefreshToken.equals(refreshToken)) {
             throw new RuntimeException("토큰의 유저 정보가 일치하지 않습니다.");
         }
 
-        // 5. 새로운 토큰 생성
+        UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                userDetails,
+                null,
+                userDetails.getAuthorities()
+        );
+
+        // 새로운 토큰 생성
         String newAccessToken = tokenProvider.createToken(authentication);
         String newRefreshToken = tokenProvider.createRefreshToken(authentication);
 
-        // 6. Redis 업데이트
+        // Redis 업데이트
         redisService.setValues(email, newRefreshToken, Duration.ofDays(7));
 
         return TokenResponseDto.builder()
@@ -129,13 +158,83 @@ public class AuthService {
         }
     }
 
+    // 로그아웃
     @Transactional
     public void logout(String accessToken, String email){
+        // redis 삭제
         if(redisService.getValues(email) != null){
             redisService.deleteValues(email);
         }
 
         Long expiration = tokenProvider.getExpiration(accessToken);
         redisService.setValues(accessToken, "logout", Duration.ofMillis(expiration));
+    }
+
+    //소셜 로그인 처리 (카카오 & 네이버 공통)
+    @Transactional
+    public TokenResponseDto processSocialLogin(String registrationId, String socialAccessToken) {
+        OAuth2UserInfo userInfo = fetchUserInfoFromProvider(registrationId, socialAccessToken);
+
+        Auth auth = saveOrUpdate(registrationId, userInfo);
+        return createTokenResponse(auth);
+    }
+
+    // 제공자별 API 호출 및 파싱
+    private OAuth2UserInfo fetchUserInfoFromProvider(String registrationId, String token) {
+        String url = registrationId.equalsIgnoreCase("kakao")
+                ? "https://kapi.kakao.com/v2/user/me"
+                : "https://openapi.naver.com/v1/nid/me";
+
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Authorization", "Bearer " + token);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(headers), Map.class
+        );
+
+        if (registrationId.equalsIgnoreCase("kakao")) {
+            return new KakaoOAuth2UserInfo(response.getBody());
+        } else {
+            return new NaverOAuth2UserInfo(response.getBody());
+        }
+    }
+
+    // JWT 발급 및 인증 처리
+    private TokenResponseDto createTokenResponse(Auth auth) {
+        UserDetails userDetails = customUserDetailsService.loadUserByUsername(auth.getEmail());
+        Authentication authentication = new UsernamePasswordAuthenticationToken(
+                userDetails, null, userDetails.getAuthorities()
+        );
+
+        String accessToken = tokenProvider.createToken(authentication);
+        String refreshToken = tokenProvider.createRefreshToken(authentication);
+
+        redisService.setValues(auth.getEmail(), refreshToken, Duration.ofDays(7));
+
+        return TokenResponseDto.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .build();
+    }
+
+    private Auth saveOrUpdate(String registrationId, OAuth2UserInfo userInfo) {
+        return authRepository.findByEmail(userInfo.getEmail())
+                .map(auth -> {
+                    auth.setTeacherName(userInfo.getName());
+                    return authRepository.save(auth);
+                })
+                .orElseGet(() -> {
+                    Schools defaultSchool = schoolsRepository.findById(1)
+                            .orElseThrow(() -> new RuntimeException("기본 학교(ID: 1)가 DB에 없어요! SQL 확인해주세요"));
+
+                    Auth auth = new Auth();
+                    auth.setEmail(userInfo.getEmail());
+                    auth.setTeacherName(userInfo.getName());
+                    auth.setProvider(AuthProvider.valueOf(registrationId.toUpperCase()));
+                    auth.setSchool(defaultSchool);
+                    auth.setProviderId(userInfo.getId());
+                    return authRepository.save(auth);
+                });
     }
 }

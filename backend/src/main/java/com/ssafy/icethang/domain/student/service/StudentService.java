@@ -1,13 +1,18 @@
 package com.ssafy.icethang.domain.student.service;
 
 import com.ssafy.icethang.domain.auth.dto.response.TokenResponseDto;
+import com.ssafy.icethang.domain.auth.entity.Auth;
 import com.ssafy.icethang.domain.student.dto.request.StudentJoinRequest;
 import com.ssafy.icethang.domain.student.dto.request.StudentLoginRequest;
 import com.ssafy.icethang.domain.student.dto.response.StudentLoginResponse;
 import com.ssafy.icethang.domain.classgroup.entity.ClassGroup;
+import com.ssafy.icethang.domain.student.dto.response.StudyLogResponse;
 import com.ssafy.icethang.domain.student.entity.Student;
 import com.ssafy.icethang.domain.classgroup.repository.ClassGroupRepository;
 import com.ssafy.icethang.domain.student.repository.StudentRepository;
+import com.ssafy.icethang.domain.student.repository.StudyLogRepository;
+import com.ssafy.icethang.domain.theme.entity.Theme;
+import com.ssafy.icethang.domain.theme.repository.ThemeRepository;
 import com.ssafy.icethang.global.redis.RedisService;
 import com.ssafy.icethang.global.security.TokenProvider;
 import com.ssafy.icethang.global.security.UserPrincipal;
@@ -20,6 +25,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +37,11 @@ public class StudentService {
     private final ClassGroupRepository classGroupRepository;
     private final TokenProvider tokenProvider;
     private final RedisService redisService;
+    private final StudyLogRepository studyLogRepository;
+    private final ThemeRepository themeRepository;
+
+    private static final Long DEFAULT_BACKGROUND_ID = 1L;
+    private static final Long DEFAULT_CHARACTER_ID = 9L;
 
     // 최초 로그인
     @Transactional
@@ -37,14 +49,38 @@ public class StudentService {
         if(studentRepository.existsByDeviceUuid(request.getDeviceUuid())){
             throw new IllegalStateException("이미 등록된 기기.");
         }
+        // 초대코드로 반 찾기
         ClassGroup classGroup = classGroupRepository.findByInviteCode(request.getInviteCode())
                 .orElseThrow(() -> new IllegalArgumentException("없는 초대코드 입니다."));
+
+        Auth teacher = classGroup.getTeacher();
+
+        if (teacher == null) {
+            throw new IllegalArgumentException("해당 반의 선생님 정보가 유효하지 않습니다.");
+        }
+
+        // 학교 정보 기입
+        Integer schoolId = null;
+        if (teacher.getSchool() != null) {
+            schoolId = teacher.getSchool().getSchoolId();
+        } else {
+            // 선생님이 학교 정보 없이 가입된 경우
+            throw new IllegalStateException("선생님의 학교 정보가 설정되지 않았습니다.");
+        }
+
+        Theme defaultBackground = themeRepository.findById(DEFAULT_BACKGROUND_ID)
+                .orElseThrow(() -> new IllegalArgumentException("기본 배경(ID:1)이 DB에 존재하지 않습니다."));
+        Theme defaultCharacter = themeRepository.findById(DEFAULT_CHARACTER_ID)
+                .orElseThrow(() -> new IllegalArgumentException("기본 캐릭터(ID:9)가 DB에 존재하지 않습니다."));
 
         Student student = Student.builder()
                 .name(request.getName())
                 .deviceUuid(request.getDeviceUuid())
                 .classGroup(classGroup)
                 .studentNumber(request.getStudentNumber())
+                .schoolId(schoolId)
+                .equippedBackground(defaultBackground)
+                .equippedCharacter(defaultCharacter)
                 .build();
 
         studentRepository.save(student);
@@ -110,8 +146,27 @@ public class StudentService {
                 .studentId(student.getId())
                 .studentName(student.getName())
                 .classId(student.getClassGroup().getId())
-                .className(student.getClassGroup().getGroupName())
+                .grade(student.getClassGroup().getGrade())
+                .classNum(student.getClassGroup().getClassNum())
                 .studentNumber(student.getStudentNumber())
+                .accessToken(accessToken)
                 .build();
     }
+
+    public List<StudyLogResponse> getStudentStudyLogs(Long studentId) {
+
+        // 학생 조회
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 학생을 찾을 수 없습니다."));
+
+        return studyLogRepository.findAllByStudentOrderByCreatedAtDesc(student)
+                .stream()
+                .map(StudyLogResponse::from)
+                .collect(Collectors.toList());
+    }
+
+    //--------------------------------------------
+    // 소켓
+
+    // 속도 -> 비동기 처리 고민
 }

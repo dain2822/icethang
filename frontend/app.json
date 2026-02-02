@@ -2,6 +2,7 @@
   "expo": {
     "name": "frontend",
     "slug": "frontend",
+    "scheme": "ice-thang",
     "version": "1.0.0",
     "web": {
       "bundler": "metro",
@@ -11,7 +12,31 @@
       "tsconfigPaths": true
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "./kakao-repo-plugin.js",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/font/Hakgyoansim_BoardmarkerR.ttf"
+          ]
+        }
+      ],
+      [
+        "@react-native-seoul/kakao-login",
+        {
+          "kakaoAppKey": "YOUR_KAKAO_APP_KEY"
+        }
+      ],
+      [
+        "@react-native-seoul/naver-login",
+        {
+          "consumerKey": "YOUR_NAVER_CONSUMER_KEY",
+          "consumerSecret": "YOUR_NAVER_CONSUMER_SECRET",
+          "serviceName": "YOUR_SERVICE_NAME",
+          "urlScheme": "YOUR_URL_SCHEME"
+        }
+      ]
     ],
     "orientation": "landscape",
     "icon": "./assets/icon.png",
@@ -32,7 +57,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.anonymous.frontend",
+      "package": "com.my.icethang",
+      "usesCleartextTraffic": true,
     "permissions": [
         "android.permission.CAMERA",
         "android.permission.SYSTEM_ALERT_WINDOW"

@@ -19,7 +19,7 @@ pipeline {
         // 기본값 설정
         SERVICE_NAME = 'develop-server'
         IMAGE_TAG = 'develop'
-        SPRING_PROFILE = 'develop' // 기본 프로필
+        SPRING_PROFILE = 'develop'
     }
 
 stages {
@@ -109,7 +109,8 @@ stages {
                         --network infra_app-network \
                         -v ${HOST_CONF_DIR}:/config \
                         -e SPRING_PROFILES_ACTIVE=${env.SPRING_PROFILE} \
-                        ${env.IMAGE_NAME}
+                        ${env.IMAGE_NAME}:${env.IMAGE_TAG} \
+                        --spring.data.redis.database=${env.SPRING_PROFILE == 'develop' ? 1 : 0}
                     """
                 }
             }
