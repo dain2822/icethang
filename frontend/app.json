@@ -35,9 +35,14 @@
         {
           "android": {
             "kotlinVersion": "2.0.21",
+              "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "34.0.0",
             "packagingOptions": {
               "pickFirst": [
-                "**/libc++_shared.so"
+                "**/libc++_shared.so",
+                "**/libreactnativejni.so"
               ]
             }
           }
