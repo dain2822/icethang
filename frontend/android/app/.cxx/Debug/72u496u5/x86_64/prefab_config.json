@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "prefabPath": "C:\\Users\\SSAFY\\.gradle\\caches\\modules-2\\files-2.1\\com.google.prefab\\cli\\2.1.0\\aa32fec809c44fa531f01dcfb739b5b3304d3050\\cli-2.1.0-all.jar",
+  "packages": [
+    "C:\\Users\\SSAFY\\Desktop\\ff\\S14P11E204\\frontend\\node_modules\\react-native-vision-camera\\android\\build\\intermediates\\prefab_package\\debug\\prefab",
+    "C:\\Users\\SSAFY\\.gradle\\caches\\8.14.3\\transforms\\958237c67010dc8a351c0ca51c0ec082\\transformed\\react-android-0.81.5-debug\\prefab",
+    "C:\\Users\\SSAFY\\Desktop\\ff\\S14P11E204\\frontend\\node_modules\\react-native-reanimated\\android\\build\\intermediates\\prefab_package\\debug\\prefab",
+    "C:\\Users\\SSAFY\\Desktop\\ff\\S14P11E204\\frontend\\node_modules\\react-native-worklets\\android\\build\\intermediates\\prefab_package\\debug\\prefab",
+    "C:\\Users\\SSAFY\\Desktop\\ff\\S14P11E204\\frontend\\node_modules\\react-native-worklets-core\\android\\build\\intermediates\\prefab_package\\debug\\prefab",
+    "C:\\Users\\SSAFY\\.gradle\\caches\\8.14.3\\transforms\\0f9cc446360d19775160f5c5bb01bb80\\transformed\\hermes-android-0.81.5-debug\\prefab",
+    "C:\\Users\\SSAFY\\.gradle\\caches\\8.14.3\\transforms\\630067bcc6f94dd9e028e6d021b2887d\\transformed\\fbjni-0.7.0\\prefab"
+  ]
+}

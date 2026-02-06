@@ -1,0 +1,9 @@
+node_modules/
+.git/
+.expo/
+android/.gradle/
+android/app/build/
+android/build/
+android/.cxx/
+android/.externalNativeBuild/
+assets/
