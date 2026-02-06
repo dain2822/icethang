@@ -7,3 +7,9 @@ android/build/
 android/.cxx/
 android/.externalNativeBuild/
 assets/
+
+node_modules/
+assets/
+android/
+app/
+.expo/
