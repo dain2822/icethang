@@ -18,6 +18,7 @@ export interface StudentInfo {
   currentLevel: number;
   schoolId: number;
   groupId: number | null;
+  classId: number;
   className?: string;
 }
 
@@ -28,12 +29,6 @@ export interface TeacherInfo {
   school: SchoolInfo;
 }
 
-interface AuthResponse<T> {
-  accessToken: string;
-  refreshToken?: string;
-  data: T;
-}
-
 interface AuthState {
   isLoggedIn: boolean;
   userRole: 'student' | 'teacher' | null;
@@ -42,6 +37,7 @@ interface AuthState {
   teacherData: TeacherInfo | null;
   loading: boolean;
   error: string | null;
+  isRegistered: boolean; 
 }
 
 const initialState: AuthState = {
@@ -52,146 +48,152 @@ const initialState: AuthState = {
   teacherData: null,
   loading: false,
   error: null,
+  isRegistered: true,
 };
 
-const extractRefreshToken = (headers: any) => {
-  try {
-    const cookies = headers['set-cookie'];
-    if (Array.isArray(cookies)) {
-      const refreshCookie = cookies.find(c => c.includes('refreshToken='));
-      if (refreshCookie) {
-        return refreshCookie.split('refreshToken=')[1].split(';')[0];
-      }
-    } else if (typeof cookies === 'string' && cookies.includes('refreshToken=')) {
-      return cookies.split('refreshToken=')[1].split(';')[0];
-    }
-  } catch (e) {
-    console.log("🍪 쿠키 파싱 실패:", e);
-  }
-  return null;
-}
-
-export const joinTeacher = createAsyncThunk<AuthResponse<TeacherInfo>, { email: string; password: string; name: string; school: string }>(
-  'auth/joinTeacher',
-  async (payload, { rejectWithValue }) => {
-    try {
-      const response = await api.post('/auth/join/teacher', {
-        email: payload.email,
-        password: payload.password,
-        teacherName: payload.name,
-        schoolName: payload.school,
-      });
-      const { accessToken, refreshToken, ...data } = response.data;
-      
-      if (Platform.OS !== 'web' && accessToken) {
-        await SecureStore.setItemAsync('accessToken', accessToken);
-        if (refreshToken) await SecureStore.setItemAsync('refreshToken', refreshToken);
-        await SecureStore.setItemAsync('userRole', 'teacher');
-      }
-      return { accessToken, refreshToken, data: data as TeacherInfo };
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || '선생님 가입 실패');
+const extractToken = (response: any) => {
+  const setCookie = response.headers['set-cookie'] || response.headers['Set-Cookie'];
+  if (setCookie) {
+    const cookieArray = Array.isArray(setCookie) ? setCookie : [setCookie];
+    const tokenCookie = cookieArray.find((c: any) => c.toLowerCase().includes('accesstoken'));
+    if (tokenCookie) {
+      return tokenCookie.split(';')[0].split('=')[1];
     }
   }
-);
+  return response.data?.accessToken || null;
+};
 
-export const loginTeacher = createAsyncThunk<AuthResponse<TeacherInfo>, { email: string; password: string }>(
+export const loginTeacher = createAsyncThunk(
   'auth/loginTeacher',
-  async (payload, { rejectWithValue }) => {
+  async (loginData: any, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/login/teacher', {
-        email: payload.email,
-        password: payload.password,
-      });
-      
-      const accessToken = response.data.accessToken;
-      const refreshToken = response.data.refreshToken;
-      const data = response.data.data || response.data;
+      const response = await api.post('/auth/login/teacher', loginData);
+      const token = extractToken(response);
 
-      if (Platform.OS !== 'web' && accessToken) {
-        await SecureStore.setItemAsync('accessToken', accessToken);
-        if (refreshToken) await SecureStore.setItemAsync('refreshToken', refreshToken);
-        await SecureStore.setItemAsync('userRole', 'teacher');
+      if (token) {
+        if (Platform.OS !== 'web') {
+          await SecureStore.setItemAsync('accessToken', token);
+          await SecureStore.setItemAsync('userRole', 'teacher');
+        }
+        return { accessToken: token, data: response.data };
       }
-      return { accessToken, refreshToken, data: data as TeacherInfo };
+      return rejectWithValue('토큰을 찾을 수 없습니다.');
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || '선생님 로그인 실패');
+      return rejectWithValue(error.response?.data?.message || '로그인 실패');
     }
   }
 );
 
-export const joinStudent = createAsyncThunk<AuthResponse<StudentInfo>, { code: string; name: string; number: number }>(
-  'auth/joinStudent',
-  async (payload, { rejectWithValue }) => {
+export const fetchTeacherMe = createAsyncThunk(
+  'auth/fetchTeacherMe',
+  async (_, { rejectWithValue }) => {
     try {
-      const deviceUuid = await getDeviceUUID(); 
-      const response = await api.post('/auth/join/student', {
-        name: payload.name,
-        studentNumber: payload.number,
-        inviteCode: payload.code,
-        deviceUuid: deviceUuid || 'unknown-device'
-      });
-      const { accessToken, ...data } = response.data;
-      if (Platform.OS !== 'web' && accessToken) {
-        await SecureStore.setItemAsync('accessToken', accessToken);
-        await SecureStore.setItemAsync('userRole', 'student');
-      }
-      return { accessToken, data: data as StudentInfo }; 
+      const response = await api.get('/auth/me');
+      return response.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || '학생 등록 실패');
+      return rejectWithValue(error.response?.data?.message || '정보 조회 실패');
     }
   }
 );
 
-export const loginStudent = createAsyncThunk<AuthResponse<StudentInfo>, void>(
+export const loginStudent = createAsyncThunk(
   'auth/loginStudent',
   async (_, { rejectWithValue }) => {
     try {
       const deviceUuid = await getDeviceUUID();
-      console.log("🚀 학생 자동 로그인 시도 (UUID):", deviceUuid);
-      
       const response = await api.post('/auth/login/student', { deviceUuid });
-      let { accessToken, refreshToken, ...data } = response.data;
-      const finalAccessToken = accessToken;
+      const token = extractToken(response);
 
-      if (!refreshToken && response.headers) {
-        refreshToken = extractRefreshToken(response.headers);
+      if (token) {
+        if (Platform.OS !== 'web') {
+          await SecureStore.setItemAsync('accessToken', token);
+          await SecureStore.setItemAsync('userRole', 'student');
+        }
+        return { accessToken: token, data: response.data };
       }
-
-      if (Platform.OS !== 'web' && accessToken) {
-        await SecureStore.setItemAsync('accessToken', accessToken);
-        if (refreshToken) await SecureStore.setItemAsync('refreshToken', refreshToken);
-        await SecureStore.setItemAsync('userRole', 'student');
-      }
-      return { accessToken: finalAccessToken, refreshToken, data: data as StudentInfo };
+      return rejectWithValue('토큰 없음');
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || '학생 로그인 실패');
+      if (error.response?.status === 404) return rejectWithValue('NOT_REGISTERED');
+      return rejectWithValue(error.response?.data?.message || '로그인 실패');
     }
   }
 );
+
+export const joinStudent = createAsyncThunk(
+  'auth/joinStudent',
+  async (studentData: { name: string; studentNumber: number; inviteCode: string }, { rejectWithValue }) => {
+    try {
+      const deviceUuid = await getDeviceUUID();
+      const response = await api.post('/auth/join/student', { ...studentData, deviceUuid });
+      const token = extractToken(response);
+
+      if (token) {
+        if (Platform.OS !== 'web') {
+          await SecureStore.setItemAsync('accessToken', token);
+          await SecureStore.setItemAsync('userRole', 'student');
+        }
+        return { accessToken: token, data: response.data };
+      }
+      return rejectWithValue('가입 성공 후 토큰을 받지 못했습니다.');
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.message || '가입 실패');
+    }
+  }
+);
+
+export const logoutUser = createAsyncThunk('auth/logout', async () => {
+  try {
+    await api.post('/auth/logout');
+  } finally {
+    if (Platform.OS !== 'web') {
+      await SecureStore.deleteItemAsync('accessToken');
+      await SecureStore.deleteItemAsync('refreshToken');
+      await SecureStore.deleteItemAsync('userRole');
+    }
+  }
+});
 
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    logout: (state) => {
-      Object.assign(state, initialState);
-      if (Platform.OS !== 'web') {
-        SecureStore.deleteItemAsync('accessToken');
-        SecureStore.deleteItemAsync('refreshToken');
-        SecureStore.deleteItemAsync('userRole');
-      }
-    },
-    restoreAuth: (state, action: PayloadAction<{ accessToken: string; userRole: 'teacher' | 'student' }>) => {
+    restoreAuth: (state, action: PayloadAction<{ accessToken: string; userRole: 'student' | 'teacher' }>) => {
       state.isLoggedIn = true;
       state.accessToken = action.payload.accessToken;
       state.userRole = action.payload.userRole;
-      state.loading = false;
-      state.error = null;
     },
+    clearAuth: (state) => {
+      state.isLoggedIn = false;
+      state.userRole = null;
+      state.accessToken = null;
+      state.studentData = null;
+      state.teacherData = null;
+    },
+    resetRegistrationStatus: (state) => {
+      state.isRegistered = true;
+    }
   },
   extraReducers: (builder) => {
     builder
+      .addCase(logoutUser.fulfilled, (state) => {
+         state.isLoggedIn = false;
+         state.userRole = null;
+         state.accessToken = null;
+         state.studentData = null;
+         state.teacherData = null;
+      })
+       .addCase(fetchTeacherMe.fulfilled, (state, action) => {
+      state.loading = false;
+      state.teacherData = {
+        teacherId: action.payload.id,
+        email: action.payload.email,
+        teacherName: action.payload.teacherName,
+        school: {
+          schoolId: action.payload.schoolId,
+          schoolName: action.payload.schoolName || '',
+        }
+      };
+    })
       .addMatcher(
         isAnyOf(joinStudent.fulfilled, loginStudent.fulfilled),
         (state, action) => {
@@ -200,19 +202,17 @@ const authSlice = createSlice({
           state.userRole = 'student';
           state.accessToken = action.payload.accessToken;
           state.studentData = action.payload.data;
-          state.teacherData = null;
-          state.error = null;
+          state.isRegistered = true;
         }
       )
       .addMatcher(
-        isAnyOf(joinTeacher.fulfilled, loginTeacher.fulfilled),
+        isAnyOf(loginTeacher.fulfilled),
         (state, action) => {
           state.loading = false;
           state.isLoggedIn = true;
           state.userRole = 'teacher';
           state.accessToken = action.payload.accessToken;
           state.teacherData = action.payload.data;
-          state.studentData = null;
           state.error = null;
         }
       )
@@ -225,13 +225,16 @@ const authSlice = createSlice({
       )
       .addMatcher(
         (action) => action.type.endsWith('/rejected'),
-        (state, action: PayloadAction<string>) => {
+        (state, action: PayloadAction<any>) => {
           state.loading = false;
-          state.error = action.payload || '로그인 처리에 실패했습니다.';
+          state.error = action.payload;
+          if (action.payload === 'NOT_REGISTERED') {
+            state.isRegistered = false;
+          }
         }
       );
   },
 });
 
-export const { logout, restoreAuth } = authSlice.actions;
+export const { clearAuth, resetRegistrationStatus, restoreAuth } = authSlice.actions;
 export default authSlice.reducer;
