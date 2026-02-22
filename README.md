@@ -132,7 +132,7 @@
 
 |    **구분**    |                                                       **파일**                                                        | **용량** |                       **설명**                       |
 | :------------: | :-------------------------------------------------------------------------------------------------------------------: | :------: | :--------------------------------------------------: |
-| 📱 Android App |     [icethang.apk](https://drive.google.com/file/d/1Opf2AkC9Zqgd-QuibJGMWFg2XSJc5y9P/view?usp=drive_link)      | 204.2 MB |            Android 설치 패키지 (APK)             |
+| 📱 Android App |     [icethang.apk](https://drive.google.com/file/d/1Opf2AkC9Zqgd-QuibJGMWFg2XSJc5y9P/view?usp=drive_link)      | 32 KB |            Android 설치 패키지 (APK)             |
 |   🤖 AI Model    |        [face_landmarker.tflite](https://drive.google.com/file/d/1po5cS7FCgX4DeItQsja_TTWwlYCIy43T/view?usp=sharing)         | 178.7 MB |    집중도 분석 모델 가중치 <br>   |
 
 </div><br>
