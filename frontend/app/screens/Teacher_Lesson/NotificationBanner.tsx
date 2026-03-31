@@ -1,22 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, ScrollView } from 'react-native';
-import { Student } from '../../store/slices/lessonSlice';
+import { AlertEntry } from '../../store/slices/lessonSlice';
 
 interface NotificationBannerProps {
-  leftStudents: Student[];
+  alerts: AlertEntry[];
 }
 
-export const NotificationBanner = ({ leftStudents }: NotificationBannerProps) => {
-  
-  // 학생이 없으면 숨김
-  if (leftStudents.length === 0) return null;
+export const NotificationBanner = ({ alerts }: NotificationBannerProps) => {
+
+  if (alerts.length === 0) return null;
 
   return (
     <View style={styles.wrapper}>
-      
+
       <View style={styles.characterContainer}>
-        <Image 
-          source={require('../../../assets/Teacher_Notification.png')} 
+        <Image
+          source={require('../../../assets/Teacher_Notification.png')}
           style={styles.characterImage}
           resizeMode="contain"
         />
@@ -24,22 +23,25 @@ export const NotificationBanner = ({ leftStudents }: NotificationBannerProps) =>
 
       <View style={styles.messageBackground}>
         <View style={styles.dashedBorder}>
-          <ScrollView 
+          <ScrollView
             style={styles.scrollArea}
             nestedScrollEnabled={true}
             showsVerticalScrollIndicator={true}
           >
-            {leftStudents.map((student) => {
-              const isLeft = student.status === 'left';
-              const message = isLeft ? '수업에서 이탈했습니다.' : '딴짓 중입니다!';
-              const icon = isLeft ? '🏃' : '👀';
+            {alerts.map((alert) => {
+              let message = '딴짓 중입니다!';
+              let icon = '👀';
+              if (alert.status === 'left') { message = '수업에서 이탈했습니다.'; icon = '🏃'; }
+              else if (alert.status === 'restroom') { message = '화장실에 갔습니다.'; icon = '🚽'; }
+              else if (alert.status === 'activity') { message = '발표 중입니다.'; icon = '✋'; }
 
               return (
-                <View key={student.id} style={styles.messageRow}>
+                <View key={alert.alertId} style={styles.messageRow}>
                   <Text style={styles.messageText}>
-                    <Text style={styles.boldText}>{icon} {student.name}</Text>
+                    <Text style={styles.boldText}>{icon} {alert.studentName}</Text>
                     이 {message}
                   </Text>
+                  <Text style={styles.timeText}>{alert.alertTime}</Text>
                 </View>
               );
             })}
@@ -99,6 +101,9 @@ const styles = StyleSheet.create({
   },
   messageRow: {
     marginBottom: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   messageText: {
     fontSize: 14,
@@ -107,5 +112,10 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: 'bold',
     color: '#8D7B68',
+  },
+  timeText: {
+    fontSize: 11,
+    color: '#A09080',
+    marginLeft: 8,
   },
 });

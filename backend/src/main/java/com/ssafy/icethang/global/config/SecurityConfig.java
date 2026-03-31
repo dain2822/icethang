@@ -70,6 +70,7 @@ public class SecurityConfig {
 
                 // 권한 설정 (누가 어디를 갈 수 있는지)
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/health").permitAll()
                         .requestMatchers("/", "/css/**", "/images/**", "/js/**", "/favicon.ico", "/h2-console/**").permitAll() // 정적 리소스 허용
                         .requestMatchers("/error").permitAll()
                         // 로그인 관련

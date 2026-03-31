@@ -38,13 +38,15 @@ interface StudentBasic {
 
 const index = () => {
   const dispatch = useDispatch<AppDispatch>();
-  const { studentId, classId } = useLocalSearchParams<{
+  const { studentId, classId, hideSidebar } = useLocalSearchParams<{
     studentId: string
     classId: string
+    hideSidebar?: string
   }>()
 
   const parsedStudentId = Number(studentId)
   const parsedClassId = Number(classId)
+  const shouldHideSidebar = hideSidebar === 'true'
 
   console.log('📍 현재 파라미터 상태:', { studentId, classId });
 
@@ -207,7 +209,7 @@ const index = () => {
 
   return (
     <View style={styles.container}>
-      <LeftSidebar />
+      {!shouldHideSidebar && <LeftSidebar />}
 
       <View style={styles.content}>
         <StatisticsHeader
@@ -313,6 +315,6 @@ export default index
 const styles = StyleSheet.create({
   container: { flex: 1, flexDirection: 'row', backgroundColor: '#F3EED4' },
   content: { flex: 1, padding: 16 },
-  monthlyLayout: { flex: 1, justifyContent: 'space-between' },
+  monthlyLayout: { flex: 1, justifyContent: 'space-between', minHeight: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 })

@@ -1,68 +1,182 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Image, StyleSheet, Animated, Easing, useWindowDimensions, ImageBackground } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router'; 
-import { stompClient } from '../../utils/socket'; 
-import { SOCKET_CONFIG } from '../../api/socket'; 
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Animated,
+  Easing,
+  useWindowDimensions,
+  ImageBackground,
+} from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../store/stores';
+import { stompClient, connectSocket } from '../../utils/socket';
+import * as SecureStore from 'expo-secure-store';
 
 export default function StudentWaitingScreen() {
   const { width, height } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams();
-  const classId = params.classId ? String(params.classId) : "1";
+
+  const studentData = useSelector(
+    (state: RootState) => state.auth.studentData
+  );
+  const reduxToken = useSelector(
+    (state: RootState) => state.auth?.accessToken
+  );
+
+  const classId = params.classId
+    ? String(params.classId)
+    : studentData?.classId?.toString() || '1';
+
   const bounceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!stompClient.active) stompClient.activate();
-
     const setupSubscription = () => {
       const targetPath = `/topic/class/${classId}/mode`;
-      return stompClient.subscribe(targetPath, (msg) => {
-        const body = JSON.parse(msg.body);
-        console.log("📥 메시지 수신:", body.mode);
 
-        // ✅ [수정] 이동 경로를 단순 문자열로도 시도 (가장 확실한 방법)
-        if (body.mode === 'DIGITAL') {
-          router.replace(`/screens/Classtime_Digital?classId=${classId}`);
-        } else if (body.mode === 'NORMAL') {
-          router.replace(`/screens/Classtime_Normal?classId=${classId}`);
+      return stompClient.subscribe(targetPath, (msg) => {
+        try {
+          const body = JSON.parse(msg.body);
+
+          if (body.mode === 'DIGITAL') {
+            router.replace(
+              `/screens/Classtime_Digital?classId=${classId}`
+            );
+          } else if (body.mode === 'NORMAL') {
+            router.replace(
+              `/screens/Classtime_Normal?classId=${classId}`
+            );
+          }
+        } catch (e) {
+          console.error('메시지 파싱 에러:', e);
         }
       });
     };
 
     let modeSub: any = null;
-    if (stompClient.connected) {
-      modeSub = setupSubscription();
-    } else {
-      stompClient.onConnect = () => { modeSub = setupSubscription(); };
-    }
 
-    return () => { if (modeSub) modeSub.unsubscribe(); };
-  }, [classId]);
+    const initSocket = async () => {
+      let token = reduxToken;
+      if (!token) {
+        token = await SecureStore.getItemAsync('accessToken');
+      }
 
-  // 애니메이션 로직 (생략 - 기존과 동일)
+      connectSocket(token || '');
+
+      if (stompClient.connected) {
+        modeSub = setupSubscription();
+      } else {
+        stompClient.onConnect = () => {
+          modeSub = setupSubscription();
+        };
+      }
+    };
+
+    initSocket();
+
+    return () => {
+      if (modeSub) modeSub.unsubscribe();
+    };
+  }, [classId, reduxToken]);
+
   useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(bounceAnim, { toValue: -20, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(bounceAnim, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
-    ])).start();
-  }, [bounceAnim]);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, {
+          toValue: -height * 0.02,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bounceAnim, {
+          toValue: 0,
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [bounceAnim, height]);
 
   return (
-    <ImageBackground source={require('../../../assets/loading_background.png')} style={styles.backgroundImage} resizeMode="cover">
-      <View style={styles.textContainer}>
-        <Text style={styles.titleText}>⭐ 조금만 기다려 주세요! ⭐</Text>
-        <Text style={styles.subtitleText}>선생님이 곧 수업을 시작하실 거에요!</Text>
+    <ImageBackground
+      source={require('../../../assets/loading_background.png')}
+      style={styles.backgroundImage}
+      resizeMode="cover"
+    >
+      <View style={styles.container}>
+        <View style={{ marginTop: height * 0.15 }}>
+          <Text
+            style={[
+              styles.titleText,
+              { fontSize: width * 0.04 },
+            ]}
+          >
+            ⭐ 조금만 기다려 주세요! ⭐
+          </Text>
+
+          <Text
+            style={[
+              styles.subtitleText,
+              { fontSize: width * 0.02 },
+            ]}
+          >
+            선생님이 곧 수업을 시작하실 거에요!
+          </Text>
+        </View>
+
+        <Animated.View
+          style={[
+            styles.doorWrapper,
+            {
+              marginTop: height * 0.06,
+              transform: [{ translateY: bounceAnim }],
+            },
+          ]}
+        >
+          <Image
+            source={require('../../../assets/door.png')}
+            style={{
+              width: width * 0.4,
+              height: width * 0.4,
+            }}
+            resizeMode="contain"
+          />
+        </Animated.View>
       </View>
-      <Animated.View style={{ transform: [{ translateY: bounceAnim }] }}>
-        <Image source={require('../../../assets/door.png')} style={{ width: width * 0.6, height: width * 0.6 }} resizeMode="contain" />
-      </Animated.View>
     </ImageBackground>
   );
 }
 
+
 const styles = StyleSheet.create({
-  backgroundImage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  textContainer: { alignItems: 'center', marginBottom: 50 },
-  titleText: { fontSize: 24, fontWeight: '900', color: '#5D4037', marginBottom: 15 },
-  subtitleText: { fontSize: 16, fontWeight: 'bold', color: '#7986CB' },
+  backgroundImage: {
+    flex: 1,
+  },
+
+  container: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  titleText: {
+    fontWeight: '900',
+    color: '#5D4037',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+
+  subtitleText: {
+    fontWeight: 'bold',
+    color: '#7986CB',
+    textAlign: 'center',
+  },
+
+  doorWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
